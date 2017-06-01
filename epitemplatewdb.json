@@ -1,0 +1,198 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "dbserver_name": {
+            "type": "string"
+        },
+        "storage_name": {
+            "type": "string"
+        },
+        "service_plan_name": {
+            "type": "string"
+        },
+        "websocket_enable": {
+            "type": "string"
+        },
+        "server_farm_size": {
+            "type": "string"
+        },
+        "server_farm_tier": {
+            "type": "string"
+        },
+        "server_farm_family": {
+            "type": "string"
+        },
+        "server_farm_capacity": {
+            "type": "int"
+        },
+        "sql_collation_name": {
+            "type": "string"
+        },
+        "sql_edition_name": {
+            "type": "string"
+        },
+        "resource_location": {
+            "type": "string"
+        },
+        "site_name": {
+            "type": "string"
+        },
+        "db_name": {
+            "type": "string"
+        },
+        "firewall_rules_name": {
+            "type": "string"
+        },
+        "databases_admin_password": {
+            "type": "securestring"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Sql/servers",
+            "name": "[parameters('dbserver_name')]",
+            "apiVersion": "2014-04-01-preview",
+            "location": "[parameters('resource_location')]",
+            "properties": {
+                "version": "12.0",
+                "administratorLogin": "sqladmin",
+                "administratorLoginPassword": "[parameters('databases_admin_password')]"
+            },
+            "resources": [
+                {
+                    "type": "databases",
+                    "name": "[parameters('db_name')]",
+                    "location": "[parameters('resource_location')]",
+                    "apiVersion": "2014-04-01-preview",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', parameters('dbserver_name'))]"
+                    ],
+                    "properties": {
+                        "edition": "[parameters('sql_edition_name')]",
+                        "collation": "[parameters('sql_collation_name')]",
+                        "maxSizeBytes": "2147483648",
+                        "requestedServiceObjectiveName": "[parameters('server_farm_size')]"
+                    }
+                },
+                {
+                    "type": "firewallrules",
+                    "name": "[parameters('firewall_rules_name')]",
+                    "location": "[parameters('resource_location')]",
+                    "apiVersion": "2014-04-01-preview",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', parameters('dbserver_name'))]"
+                    ],
+                    "properties": {
+                        "endIpAddress": "0.0.0.0",
+                        "startIpAddress": "0.0.0.0"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "sku": {
+                "name": "Standard_RAGRS",
+                "tier": "Standard"
+            },
+            "kind": "Storage",
+            "name": "[parameters('storage_name')]",
+            "apiVersion": "2016-01-01",
+            "location": "[parameters('resource_location')]"
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "sku": {
+                "name": "[parameters('server_farm_size')]",
+                "tier": "[parameters('server_farm_tier')]",
+                "size": "[parameters('server_farm_size')]",
+                "family": "[parameters('server_farm_family')]",
+                "capacity": "[parameters('server_farm_capacity')]"
+            },
+            "name": "[parameters('service_plan_name')]",
+            "apiVersion": "2015-08-01",
+            "location": "[parameters('resource_location')]",
+            "properties": {
+                "name": "[parameters('service_plan_name')]",
+                "numberOfWorkers": 1
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "name": "[parameters('site_name')]",
+            "apiVersion": "2015-08-01",
+            "location": "[parameters('resource_location')]",
+            "tags": {
+                "[concat('hidden-related:', resourceGroup().id, '/providers/Microsoft.Web/serverfarms/', parameters('service_plan_name'))]": "empty"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('service_plan_name'))]",
+                "[concat('Microsoft.Storage/storageAccounts/', parameters('storage_name'))]"
+            ],
+            "resources": [
+                {
+                    "type": "config",
+                    "name": "web",
+                    "apiVersion": "2015-08-01",
+                    "dependsOn": [
+                        "[concat('Microsoft.Web/Sites/', parameters('site_name'))]"
+                    ],
+                    "properties": {
+                        "webSocketsEnabled": "[parameters('websocket_enable')]"
+                    }
+                }
+            ],
+            "properties": {
+                "name": "[parameters('site_name')]",
+                "hostNames": [
+                    "[concat(parameters('site_name'),'.azurewebsites.net')]"
+                ],
+                "enabledHostNames": [
+                    "[concat(parameters('site_name'),'.azurewebsites.net')]",
+                    "[concat(parameters('site_name'),'.scm.azurewebsites.net')]"
+                ],
+                "hostNameSslStates": [
+                    {
+                        "name": "[concat(parameters('site_name'),'.azurewebsites.net')]",
+                        "sslState": 0,
+                        "thumbprint": null,
+                        "ipBasedSslState": 0
+                    },
+                    {
+                        "name": "[concat(parameters('site_name'),'.scm.azurewebsites.net')]",
+                        "sslState": 0,
+                        "thumbprint": null,
+                        "ipBasedSslState": 0
+                    }
+                ],
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('service_plan_name'))]",
+                "siteConfig": {
+                    "connectionStrings": [
+                        {
+                            "Name": "EPiServerDB",
+                            "ConnectionString": "[concat('Server=tcp:', parameters('dbserver_name'), '.database.windows.net,1433;Initial Catalog=', parameters('db_name'),';Persist Security Info=False;User ID=sqladmin;Password=', parameters('databases_admin_password'),';MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]",
+                            "Type": 2
+                        },
+                        {
+                            "Name": "EPiServerAzureBlobs",
+                            "ConnectionString": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storage_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts/', parameters('storage_name')), '2015-06-15').key1)]",
+                            "Type": 3
+                        }
+                    ],
+                    "appSettings": [
+                        {
+                            "name": "episerver:automation:generatedata",
+                            "value": "true"
+                        },
+                        {
+                            "name": "episerver:automation:hostname",
+                            "value": "[concat(parameters('site_name'),'.azurewebsites.net')]"
+                        }
+                    ]
+                }
+            }
+        }
+    ]
+}
